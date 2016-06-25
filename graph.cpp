@@ -5,17 +5,27 @@
 #include <sys/stat.h>
 #include <fcntl.h>           /* Definition of AT_* constants */
 #include <unistd.h>
+#include <cctype>
+#include <cstring>
+#include "base64.h"
+#include "malloc.h"
 
 extern "C" {
 	#include "tracy/src/tracy.h"
 }
+
+typedef struct {
+	int size;
+	char* data;
+} content;
 
 FILE* graph;
 
 typedef struct _Process {
 	pid_t parent = -1;
 	std::string fds[50];
-	std::unordered_map<std::string, std::string> contents;
+	std::unordered_map<std::string, content> contents;
+	std::unordered_map<std::string, content> writes;
 
 	_Process() {
 		for(int i = 0; i < 50; i++) {
@@ -36,6 +46,21 @@ Process& get(pid_t pid) {
 	return processes[pid];
 }
 
+void addFD(std::unordered_map<std::string, content> &map, std::string file, char* data, int size) {
+	auto it = map.find(file);
+	if(it != map.end()) {
+		int pos = map[file].size;
+		map[file].size += size;
+		map[file].data = (char*) realloc(map[file].data, map[file].size);
+		memcpy(map[file].data + pos, data, size);
+	} else {
+		map[file] = content();
+		map[file].size = size;
+		map[file].data = (char*) malloc(size);
+		memcpy(map[file].data, data, size);
+	}
+}
+
 std::string ReplaceAll(std::string str, const std::string& from, const std::string& to) {
 	size_t start_pos = 0;
 	while((start_pos = str.find(from, start_pos)) != std::string::npos) {
@@ -46,19 +71,23 @@ std::string ReplaceAll(std::string str, const std::string& from, const std::stri
 }
 
 bool isBinary(std::string in) {
-	for(char c: in) {
+	for(int c: in) {
 		if(!std::isalnum(c)) {
-			return false;
+			return true;
 		}
 	}
-	return true;
+	return false;
 }
 
 int hook_read(struct tracy_event * e) {
-	if (e->child->pre_syscall) {
+	if (!e->child->pre_syscall) {
 		Process &p = get(e->child->pid);
 
-		int len = e->args.a2;
+		int len = e->args.return_code;
+		if(len <= 0) {
+			return TRACY_HOOK_CONTINUE;
+		}
+
 		char *data = new char[len+1];
 		tracy_read_mem(e->child, data, (tracy_child_addr_t) e->args.a1, len);
 
@@ -76,17 +105,7 @@ int hook_read(struct tracy_event * e) {
 			result[0]=0;
 		}
 
-
-		std::string f = ReplaceAll(ReplaceAll(data, "\n", "\\\n"), "\"", "\\\"");
-		if(!isBinary(f)) {
-			f = "[binary]";
-		}
-
-		f=f.substr(0, 11);
-
-			fprintf(graph, "%d -> \"%s\" [tooltip=\"%s\", color=red, penwidth=4];\n", e->child->pid,
-			        result/*p.fds[e->args.a0].c_str()*/, f.c_str());
-
+		addFD(p.contents, result, data, len);
 
 		delete[] data;
 	}
@@ -111,8 +130,9 @@ int hook_write(struct tracy_event * e) {
 	    int l = readlink(buffer, result, 99);
 	    result[l] = 0;
 
+	    addFD(p.writes, result, data, len);
 
-	    fprintf(graph, "%d -> \"%s\" [tooltip=\"%s\", color=blue, penwidth=4];\n", e->child->pid, result/*p.fds[e->args.a0].c_str()*/, data);
+	    //fprintf(graph, "%d -> \"%s\" [tooltip=\"%s\", color=blue, penwidth=4];\n", e->child->pid, result/*p.fds[e->args.a0].c_str()*/, data);
 
 	    delete[] data;
     }
@@ -189,8 +209,12 @@ int handle_signal(struct tracy_event *s) {
 		printf("continued\n");
 	}
 
+
+
 	return TRACY_HOOK_CONTINUE;
 }
+
+int mytracy_main(struct tracy *tracy);
 
 int main(int argc, char** argv) {
 	graph = fopen("/tmp/graph.dot", "w+");
@@ -225,7 +249,7 @@ int main(int argc, char** argv) {
 		return EXIT_FAILURE;
 	}
 
-	if (tracy_set_hook(tracy, "open", TRACY_ABI_NATIVE, hook_open)) {
+	/*if (tracy_set_hook(tracy, "open", TRACY_ABI_NATIVE, hook_open)) {
 		fprintf(stderr, "Could not hook write\n");
 		return EXIT_FAILURE;
 	}
@@ -238,7 +262,7 @@ int main(int argc, char** argv) {
 	if (tracy_set_hook(tracy, "pipe", TRACY_ABI_NATIVE, hook_pipe)) {
 		fprintf(stderr, "Could not hook write\n");
 		return EXIT_FAILURE;
-	}
+	}*/
 
     if (argc < 2) {
         printf("Usage: ./example <program-name>\n");
@@ -252,10 +276,96 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    tracy_main(tracy);
+    mytracy_main(tracy);
 
     tracy_free(tracy);
 	fprintf(graph, "}\n");
 
     return EXIT_SUCCESS;
+}
+
+/* Main function for simple tracy based applications */
+int mytracy_main(struct tracy *tracy) {
+	struct tracy_event *e;
+
+	/* Setup interrupt handler */
+	//main_loop_go_on = 1;
+	//signal(SIGINT, _main_interrupt_handler);
+
+	while (1) {
+		e = tracy_wait_event(tracy, -1);
+		if (!e) {
+			fprintf(stderr, "tracy_main: tracy_wait_Event returned NULL\n");
+			continue;
+		}
+
+		if (e->type == TRACY_EVENT_NONE) {
+			break;
+		} else if (e->type == TRACY_EVENT_INTERNAL) {
+			/*
+			printf("Internal event for syscall: %s\n",
+					get_syscall_name(e->syscall_num));
+			*/
+		}
+		if (e->type == TRACY_EVENT_SIGNAL) {
+			if (TRACY_PRINT_SIGNALS(tracy)) {
+				fprintf(stderr, _y("Signal %s (%ld) for child %d")"\n",
+				        get_signal_name(e->signal_num), e->signal_num, e->child->pid);
+			}
+		} else
+
+		if (e->type == TRACY_EVENT_SYSCALL) {
+			/*
+			if (TRACY_PRINT_SYSCALLS(tracy)) {
+				printf(_y("%04d System call: %s (%ld) Pre: %d")"\n",
+						e->child->pid, get_syscall_name(e->syscall_num),
+						e->syscall_num, e->child->pre_syscall);
+			}
+			*/
+		} else
+
+		if (e->type == TRACY_EVENT_QUIT) {
+			if (tracy->opt & TRACY_VERBOSE)
+				printf(_b("EVENT_QUIT from %d with signal %s (%ld)\n"),
+				       e->child->pid, get_signal_name(e->signal_num),
+				       e->signal_num);
+			if (e->child->pid == tracy->fpid) {
+				if (tracy->opt & TRACY_VERBOSE)
+					printf(_g("Our first child died.\n"));
+			}
+
+			Process &p = get(e->child->pid);
+			for(auto content: p.contents) {
+				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\"];\n",
+				        content.first.c_str(),
+				        e->child->pid,
+				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str()
+				);
+			}
+
+
+			for(auto content: p.writes) {
+				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\"];\n",
+				        e->child->pid,
+				        content.first.c_str(),
+				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str()
+				);
+			}
+
+
+			tracy_remove_child(e->child);
+			continue;
+		}
+
+		if (!tracy_children_count(tracy)) {
+			break;
+		}
+
+		tracy_continue(e, 0);
+	}
+
+	/* Tear down interrupt handler */
+	signal(SIGINT, SIG_DFL);
+
+	return 0;
 }
