@@ -106,7 +106,9 @@ int hook_read(struct tracy_event * e) {
 			result[0]=0;
 		}
 
-		addFD(p.contents, result, data, len);
+		if(strncmp(result, "/usr/lib/", strlen("/usr/lib/")) != 0) {
+			addFD(p.contents, result, data, len);
+		}
 
 		delete[] data;
 	}
@@ -241,8 +243,25 @@ int handle_signal(struct tracy_event *s) {
 int mytracy_main(struct tracy *tracy);
 
 int main(int argc, char** argv) {
-	graph = fopen("/tmp/graph.dot", "w+");
-	fprintf(graph, "digraph {sep=\"+25,25\";overlap=scalexy;node [fontsize=11];splines=true;\n");
+	char* out = getenv("OUT");
+	if(!out) {
+		out = "/tmp/graph.dot";
+	}
+
+	graph = fopen(out, "w+");
+	if(!graph) {
+		perror("fopen");
+		exit(1);
+	}
+
+	std::string ar;
+	for(int i = 1; i < argc; i++) {
+		ar.append("\\\"");
+		ar.append(argv[i]);
+		ar.append("\\\" ");
+	}
+
+	fprintf(graph, "digraph {label=\"%s\";labelloc=\"t\";overlap=prism; overlap_scaling=0.1; ratio=0.2;\n", ar.c_str());
 
     struct tracy * tracy;
 

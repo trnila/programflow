@@ -1,0 +1,12 @@
+./examples/pipes
+ls
+bash -c '/usr/bin/echo ahoj > /tmp/x'
+bash -c 'ls'
+bash -c 'ls;who'
+bash -c 'ls | tac | tr a-z A-Z > /tmp/x'
+timeout 10 xterm
+timeout 30 firefox
+make clean all -C examples/
+make clean all -C examples/3
+timeout 10 weston
+bash -c "timeout 10 ./examples/osy/server/server & ./examples/osy/client/client; wait"
