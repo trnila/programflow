@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <cctype>
 #include <cstring>
+#include <sstream>
 #include "base64.h"
 #include "malloc.h"
 
@@ -150,7 +151,30 @@ int hook_fork(struct tracy_event *e) {
 int hook_execve(struct tracy_event *e) {
 	if(e->child->pre_syscall) {
 		char *path = tracy_read_string(e->child, (tracy_child_addr_t) e->args.a0);
-		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow];\n", e->child->pid, path);
+
+		std::ostringstream os;
+
+		int i = 0;
+		while(1) {
+			tracy_parent_addr_t argv;
+			tracy_read_mem(e->child, &argv, (tracy_child_addr_t) e->args.a1 + 8*i, sizeof(argv));
+
+			if(argv == NULL) {
+				break;
+			}
+
+			char *c = tracy_read_string(e->child, (tracy_child_addr_t) argv);
+
+			os << c << "\n";
+
+			i++;
+		}
+
+		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"data:text/plain;base64,%s\"];\n",
+		        e->child->pid,
+		        path,
+		        base64_encode((unsigned char*) os.str().c_str(), os.str().size()).c_str()
+		);
 	}
 	return TRACY_HOOK_CONTINUE;
 }
