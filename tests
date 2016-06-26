@@ -11,3 +11,5 @@ make clean all -C examples/3
 timeout 10 weston
 bash -c "timeout 10 ./examples/osy/server/server & sleep 1; ./examples/osy/client/client ::1 1234 spisovatel; ./examples/osy/client/client ::1 1234 ctenar; wait"
 bash -c "timeout 10 ./examples/unixsocket & sleep 1; cat /etc/passwd | socat - UNIX-CONNECT:/tmp/mysrv.sock > /dev/null"
+curl http://httpbin.org/user-agent
+curl https://httpbin.org/user-agent

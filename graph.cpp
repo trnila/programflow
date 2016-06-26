@@ -334,11 +334,20 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "Could not hook write\n");
 		return EXIT_FAILURE;
 	}
+	if (tracy_set_hook(tracy, "recvfrom", TRACY_ABI_NATIVE, hook_read)) {
+		fprintf(stderr, "Could not hook write\n");
+		return EXIT_FAILURE;
+	}
 
     if (tracy_set_hook(tracy, "write", TRACY_ABI_NATIVE, hook_write)) {
         fprintf(stderr, "Could not hook write\n");
         return EXIT_FAILURE;
     }
+	if (tracy_set_hook(tracy, "sendto", TRACY_ABI_NATIVE, hook_write)) {
+		fprintf(stderr, "Could not hook write\n");
+		return EXIT_FAILURE;
+	}
+
 	
 	if (tracy_set_hook(tracy, "execve", TRACY_ABI_NATIVE, hook_execve)) {
         fprintf(stderr, "Could not hook write\n");
