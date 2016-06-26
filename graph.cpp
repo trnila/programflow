@@ -150,6 +150,7 @@ int hook_write(struct tracy_event * e) {
 
 int hook_fork(struct tracy_event *e) {
 	if(!e->child->pre_syscall) {
+		fprintf(graph, "%d [style=filled, fillcolor=yellow];\n", e->args.return_code);
 		fprintf(graph, "%d -> %d;\n", e->child->pid, e->args.return_code);
 	}
 	return TRACY_HOOK_CONTINUE;
@@ -177,7 +178,7 @@ int hook_execve(struct tracy_event *e) {
 			i++;
 		}
 
-		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"data:text/plain;base64,%s\"];\n",
+		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"data:text/plain;base64,%s\",fontsize=12];\n",
 		        e->child->pid,
 		        path,
 		        base64_encode((unsigned char*) os.str().c_str(), os.str().size()).c_str()
@@ -322,7 +323,7 @@ int main(int argc, char** argv) {
 		ar.append("\\\" ");
 	}
 
-	fprintf(graph, "digraph {label=\"%s\";labelloc=\"t\";overlap=prism; overlap_scaling=0.1; ratio=0.2;\n", ar.c_str());
+	fprintf(graph, "digraph {label=\"%s\";labelloc=\"t\";\n", ar.c_str());
 
     struct tracy * tracy;
 

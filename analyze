@@ -1,0 +1,2 @@
+ cat /tmp/x | grep -P "^[0-9]+   [a-z]" | sort
+  cat /tmp/x | sed  -rn "s/^[0-9]+   ([a-z][^\(]+).+$/\1/p" | sort | uniq -c | sort -n
