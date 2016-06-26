@@ -5,8 +5,9 @@ bash -c 'ls'
 bash -c 'ls;who'
 bash -c 'ls | tac | tr a-z A-Z > /tmp/x'
 timeout 10 xterm
-timeout 30 firefox
+timeout 15 firefox
 make clean all -C examples/
 make clean all -C examples/3
 timeout 10 weston
-bash -c "timeout 10 ./examples/osy/server/server & ./examples/osy/client/client; wait"
+bash -c "timeout 10 ./examples/osy/server/server & sleep 1; ./examples/osy/client/client ::1 1234 spisovatel; ./examples/osy/client/client ::1 1234 ctenar; wait"
+bash -c "timeout 10 ./examples/unixsocket & sleep 1; cat /etc/passwd | socat - UNIX-CONNECT:/tmp/mysrv.sock > /dev/null"

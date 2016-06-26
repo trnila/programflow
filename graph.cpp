@@ -8,6 +8,8 @@
 #include <cctype>
 #include <cstring>
 #include <sstream>
+#include <sys/socket.h>
+#include <asm/unistd.h>
 #include "base64.h"
 #include "malloc.h"
 
@@ -219,6 +221,62 @@ int hook_pipe(struct tracy_event *e) {
 	return TRACY_HOOK_CONTINUE;
 }
 
+int hook_sendmsg(struct tracy_event *e) {
+	if(!e->child->pre_syscall) {
+		Process &p = get(e->child->pid);
+
+		struct msghdr msg;
+		tracy_read_mem(e->child, &msg, (tracy_child_addr_t) e->args.a1, sizeof(msg));
+
+		for(int i = 0; i < msg.msg_iovlen; i++) {
+			struct iovec first;
+			tracy_read_mem(e->child, &first, (tracy_child_addr_t) msg.msg_iov + i * sizeof(first), sizeof(first));
+
+			char *data = new char[first.iov_len];
+			tracy_read_mem(e->child, data, (tracy_child_addr_t) first.iov_base, first.iov_len);
+
+			//write(1, data, first.iov_len);
+			//printf("\n");
+
+
+			char buffer[128];
+			char result[100];
+			sprintf(buffer, "/proc/%d/fd/%d", e->child->pid, e->args.a0);
+			int l = readlink(buffer, result, 99);
+			result[l] = 0;
+
+			if(e->syscall_num == __NR_sendmsg) {
+				addFD(p.writes, result, data, first.iov_len);
+			} else if(e->syscall_num == __NR_recvmsg) {
+				addFD(p.contents, result, data, first.iov_len);
+			}
+
+			delete[] data;
+		}
+
+
+		/*struct iovec first;
+		tracy_read_mem(e->child, &first, (tracy_child_addr_t) msg.msg_iov, sizeof(first));
+
+		char *data = new char[first.iov_len];
+		tracy_read_mem(e->child, data, (tracy_child_addr_t) first.iov_base, first.iov_len);
+
+		write(1, data, first.iov_len);
+		printf("\n");
+
+
+		char buffer[128];
+		char result[100];
+		sprintf(buffer, "/proc/%d/fd/%d", e->child->pid, e->args.a0);
+		int l = readlink(buffer, result, 99);
+		result[l] = 0;
+
+		addFD(p.writes, result, data, first.iov_len);*/
+
+	}
+	return TRACY_HOOK_CONTINUE;
+}
+
 
 int handle_signal(struct tracy_event *s) {
 	printf(">>>%d %d\n", s->child->pid, s->signal_num);
@@ -306,6 +364,16 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "Could not hook write\n");
 		return EXIT_FAILURE;
 	}*/
+
+	if (tracy_set_hook(tracy, "sendmsg", TRACY_ABI_NATIVE, hook_sendmsg)) {
+		fprintf(stderr, "Could not hook write\n");
+		return EXIT_FAILURE;
+	}
+
+	if (tracy_set_hook(tracy, "recvmsg", TRACY_ABI_NATIVE, hook_sendmsg)) {
+		fprintf(stderr, "Could not hook write\n");
+		return EXIT_FAILURE;
+	}
 
     if (argc < 2) {
         printf("Usage: ./example <program-name>\n");
