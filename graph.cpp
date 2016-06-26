@@ -10,6 +10,9 @@
 #include <sstream>
 #include <sys/socket.h>
 #include <asm/unistd.h>
+#include <math.h>
+#include <algorithm>
+#include <iomanip>
 #include "base64.h"
 #include "malloc.h"
 
@@ -404,6 +407,19 @@ int main(int argc, char** argv) {
     return EXIT_SUCCESS;
 }
 
+std::string formatBytes(int i) {
+	std::string units[] = {"B", "KB", "MB", "GB", "TB"};
+	float bytes = std::max(i, 0);
+	float pow = floor((bytes ? log(bytes) : 0) / (float) log(1024));
+	pow = std::min((int) pow, (int) (sizeof(units)/sizeof(*units) - 1));
+
+	bytes /= (1 << (10 * (int) pow));
+
+	std::ostringstream os;
+	os << std::fixed << std::setprecision(2) << bytes << units[(int) pow];
+	return os.str();
+}
+
 /* Main function for simple tracy based applications */
 int mytracy_main(struct tracy *tracy) {
 	struct tracy_event *e;
@@ -456,19 +472,21 @@ int mytracy_main(struct tracy *tracy) {
 
 			Process &p = get(e->child->pid);
 			for(auto content: p.contents) {
-				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\"];\n",
+				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\", label=\"%s\", fontsize=10];\n",
 				        content.first.c_str(),
 				        e->child->pid,
-				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str()
+				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str(),
+				        formatBytes(content.second.size).c_str()
 				);
 			}
 
 
 			for(auto content: p.writes) {
-				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\"];\n",
+				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\", label=\"%s\", fontsize=10];\n",
 				        e->child->pid,
 				        content.first.c_str(),
-				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str()
+				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str(),
+				        formatBytes(content.second.size).c_str()
 				);
 			}
 
