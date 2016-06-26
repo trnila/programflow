@@ -1,5 +1,6 @@
 LDFLAGS=-pthread
 CC=g++
+CXXFLAGS=-g
 
 all: graph
 

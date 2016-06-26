@@ -1,4 +1,5 @@
 ./examples/pipes
+./examples/dbus
 ls
 bash -c '/usr/bin/echo ahoj > /tmp/x'
 bash -c 'ls'

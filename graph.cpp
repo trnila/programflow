@@ -13,6 +13,9 @@
 #include <math.h>
 #include <algorithm>
 #include <iomanip>
+#include <fstream>
+#include <netinet/in.h>
+#include <iostream>
 #include "base64.h"
 #include "malloc.h"
 
@@ -85,6 +88,97 @@ bool isBinary(std::string in) {
 	return false;
 }
 
+std::string parseAddress(const char *file, int inode) {
+	std::ifstream in(file);
+	if(!in.is_open()) {
+		throw std::runtime_error("could not open tcp");
+	}
+	std::string line;
+	while(getline(in, line)) {
+		int g, pinode;
+		std::string local, remote, unixSocket, gs, pinodes;
+
+		std::istringstream is(line);
+		is >> gs >> local >> remote >> gs >> gs >> gs >> pinodes >> unixSocket >> gs >> pinode;
+
+		if(pinode == inode) {
+			char buffer[200] = {0};
+			int a, b, c, d, port;
+			if(sscanf(remote.c_str(), "%2X%2X%2X%2X:%X", &a, &b, &c, &d, &port) == 5) {
+				sprintf(buffer, "%d.%d.%d.%d:%d", d, c, b, a, port);
+				return std::string(buffer);
+			}
+
+			int parts[4];
+			if(sscanf(remote.c_str(), "%8X%8X%8X%8X:%X", &parts[0], &parts[1], &parts[2], &parts[3], &port) == 5) {
+				for (int i = 0; i < 4; i++) {
+					for (int j = 0; j < 4; j++) {
+						sprintf(buffer + strlen(buffer), "%02x", (parts[i] >> (8 * j)) & 0xFF);
+						if (j == 1 || j == 3) {
+							sprintf(buffer + strlen(buffer), ":");
+						}
+					}
+				}
+
+				sprintf(buffer + strlen(buffer), ":%d", port);
+				return std::string(buffer);
+			}
+		}
+		
+		if(atoi(pinodes.c_str()) == inode) {
+			return std::string(unixSocket);
+		}
+	}
+
+	return std::string();
+}
+
+std::string getAddrWithType(int inode) {
+	std::string addr;
+	addr = parseAddress("/proc/net/tcp6", inode);
+	if(!addr.empty()) {
+		return std::string("TCP6: " + addr);
+	}
+
+	addr = parseAddress("/proc/net/tcp", inode);
+	if(!addr.empty()) {
+		return std::string("TCP4: " + addr);
+	}
+
+	addr = parseAddress("/proc/net/udp", inode);
+	if(!addr.empty()) {
+		return std::string("UDP: " + addr);
+	}
+
+	addr = parseAddress("/proc/net/unix", inode);
+	if(!addr.empty()) {
+		return std::string("UNIX: " + addr);
+	}
+
+	return addr;
+}
+
+void getResourceName(char* result, int pid, int fd) {
+	char buffer[128];
+	sprintf(buffer, "/proc/%d/fd/%d", pid, fd);
+	int l = readlink(buffer, result, 99);
+	if(l >= 0) {
+		result[l] = 0;
+	} else {
+		result[0]=0;
+	}
+
+	int inode;
+	if(sscanf(result, "socket:[%d]", &inode) == 1) {
+		std::string addr = getAddrWithType(inode);
+
+		if(!addr.empty()) {
+			strcat(result, "\\n");
+			strcat(result, addr.c_str());
+		}
+	}
+}
+
 int hook_read(struct tracy_event * e) {
 	if (!e->child->pre_syscall) {
 		Process &p = get(e->child->pid);
@@ -101,15 +195,8 @@ int hook_read(struct tracy_event * e) {
 
 		int fd = e->args.a0;
 
-		char buffer[128];
 		char result[100];
-		sprintf(buffer, "/proc/%d/fd/%d", e->child->pid, fd);
-		int l = readlink(buffer, result, 99);
-		if(l >= 0) {
-			result[l] = 0;
-		} else {
-			result[0]=0;
-		}
+		getResourceName(result, e->child->pid, fd);
 
 		if(strncmp(result, "/usr/lib/", strlen("/usr/lib/")) != 0) {
 			addFD(p.contents, result, data, len);
@@ -132,11 +219,9 @@ int hook_write(struct tracy_event * e) {
 
 	    int fd = e->args.a0;
 
-	    char buffer[128];
+
 	    char result[100];
-	    sprintf(buffer, "/proc/%d/fd/%d", e->child->pid, fd);
-	    int l = readlink(buffer, result, 99);
-	    result[l] = 0;
+		getResourceName(result, e->child->pid, e->args.a0);
 
 	    addFD(p.writes, result, data, len);
 
@@ -243,11 +328,8 @@ int hook_sendmsg(struct tracy_event *e) {
 			//printf("\n");
 
 
-			char buffer[128];
 			char result[100];
-			sprintf(buffer, "/proc/%d/fd/%d", e->child->pid, e->args.a0);
-			int l = readlink(buffer, result, 99);
-			result[l] = 0;
+			getResourceName(result, e->child->pid, e->args.a0);
 
 			if(e->syscall_num == __NR_sendmsg) {
 				addFD(p.writes, result, data, first.iov_len);
