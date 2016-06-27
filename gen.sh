@@ -1,5 +1,5 @@
 #!/bin/bash
-list=out/out.html
+list=out/index.html
 
 n=1
 echo "<ul>" > $list

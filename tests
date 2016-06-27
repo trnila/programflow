@@ -6,7 +6,7 @@ bash -c 'ls'
 bash -c 'ls;who'
 bash -c 'ls | tac | tr a-z A-Z > /tmp/x'
 timeout 10 xterm
-timeout 15 firefox
+bash -c 'rm -r ~/.mozilla; timeout 15 firefox'
 make clean all -C examples/
 make clean all -C examples/3
 timeout 10 weston
@@ -14,3 +14,5 @@ bash -c "timeout 10 ./examples/osy/server/server & sleep 1; ./examples/osy/clien
 bash -c "timeout 10 ./examples/unixsocket & sleep 1; cat /etc/passwd | socat - UNIX-CONNECT:/tmp/mysrv.sock > /dev/null"
 curl http://httpbin.org/user-agent
 curl https://httpbin.org/user-agent
+dig AAAA example.org @8.8.8.8
+systemctl status > /tmp/x

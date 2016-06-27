@@ -124,7 +124,7 @@ std::string parseAddress(const char *file, int inode) {
 				return std::string(buffer);
 			}
 		}
-		
+
 		if(atoi(pinodes.c_str()) == inode) {
 			return std::string(unixSocket);
 		}
