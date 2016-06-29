@@ -1,11 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unordered_map>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>           /* Definition of AT_* constants */
+#include <fcntl.h>
 #include <unistd.h>
-#include <cctype>
 #include <cstring>
 #include <sstream>
 #include <sys/socket.h>
@@ -14,7 +11,6 @@
 #include <algorithm>
 #include <iomanip>
 #include <fstream>
-#include <netinet/in.h>
 #include <iostream>
 #include "base64.h"
 #include "malloc.h"
@@ -23,29 +19,22 @@ extern "C" {
 	#include "tracy/src/tracy.h"
 }
 
+struct Process;
+FILE* graph;
+std::unordered_map<pid_t, Process> processes;
+
 typedef struct {
 	int size;
 	char* data;
-} content;
-
-FILE* graph;
+} FDContent;
 
 typedef struct _Process {
-	pid_t parent = -1;
-	std::string fds[50];
-	std::unordered_map<std::string, content> contents;
-	std::unordered_map<std::string, content> writes;
-
-	_Process() {
-		for(int i = 0; i < 50; i++) {
-			fds[i] = std::to_string(i);
-		}
-	}
+	std::unordered_map<std::string, FDContent> reads;
+	std::unordered_map<std::string, FDContent> writes;
 } Process;
 
-std::unordered_map<pid_t, Process> processes;
 
-Process& get(pid_t pid) {
+Process& getProcess(pid_t pid) {
 	auto it = processes.find(pid);
 	if(it != processes.end()) {
 		return it->second;
@@ -55,7 +44,7 @@ Process& get(pid_t pid) {
 	return processes[pid];
 }
 
-void addFD(std::unordered_map<std::string, content> &map, std::string file, char* data, int size) {
+void addContentToFD(std::unordered_map<std::string, FDContent> &map, std::string file, char *data, int size) {
 	auto it = map.find(file);
 	if(it != map.end()) {
 		int pos = map[file].size;
@@ -63,32 +52,14 @@ void addFD(std::unordered_map<std::string, content> &map, std::string file, char
 		map[file].data = (char*) realloc(map[file].data, map[file].size);
 		memcpy(map[file].data + pos, data, size);
 	} else {
-		map[file] = content();
+		map[file] = FDContent();
 		map[file].size = size;
 		map[file].data = (char*) malloc(size);
 		memcpy(map[file].data, data, size);
 	}
 }
 
-std::string ReplaceAll(std::string str, const std::string& from, const std::string& to) {
-	size_t start_pos = 0;
-	while((start_pos = str.find(from, start_pos)) != std::string::npos) {
-		str.replace(start_pos, from.length(), to);
-		start_pos += to.length(); // Handles case where 'to' is a substring of 'from'
-	}
-	return str;
-}
-
-bool isBinary(std::string in) {
-	for(int c: in) {
-		if(!std::isalnum(c)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-std::string parseAddress(const char *file, int inode) {
+std::string getInodeDescription(const char *file, int inode) {
 	std::ifstream in(file);
 	if(!in.is_open()) {
 		throw std::runtime_error("could not open tcp");
@@ -135,22 +106,22 @@ std::string parseAddress(const char *file, int inode) {
 
 std::string getAddrWithType(int inode) {
 	std::string addr;
-	addr = parseAddress("/proc/net/tcp6", inode);
+	addr = getInodeDescription("/proc/net/tcp6", inode);
 	if(!addr.empty()) {
 		return std::string("TCP6: " + addr);
 	}
 
-	addr = parseAddress("/proc/net/tcp", inode);
+	addr = getInodeDescription("/proc/net/tcp", inode);
 	if(!addr.empty()) {
 		return std::string("TCP4: " + addr);
 	}
 
-	addr = parseAddress("/proc/net/udp", inode);
+	addr = getInodeDescription("/proc/net/udp", inode);
 	if(!addr.empty()) {
 		return std::string("UDP: " + addr);
 	}
 
-	addr = parseAddress("/proc/net/unix", inode);
+	addr = getInodeDescription("/proc/net/unix", inode);
 	if(!addr.empty()) {
 		return std::string("UNIX: " + addr);
 	}
@@ -158,7 +129,7 @@ std::string getAddrWithType(int inode) {
 	return addr;
 }
 
-void getResourceName(char* result, int pid, int fd) {
+void getFDName(char *result, int pid, int fd) {
 	char buffer[128];
 	sprintf(buffer, "/proc/%d/fd/%d", pid, fd);
 	int l = readlink(buffer, result, 99);
@@ -181,7 +152,7 @@ void getResourceName(char* result, int pid, int fd) {
 
 int hook_read(struct tracy_event * e) {
 	if (!e->child->pre_syscall) {
-		Process &p = get(e->child->pid);
+		Process &p = getProcess(e->child->pid);
 
 		int len = e->args.return_code;
 		if(len <= 0) {
@@ -196,10 +167,10 @@ int hook_read(struct tracy_event * e) {
 		int fd = e->args.a0;
 
 		char result[100];
-		getResourceName(result, e->child->pid, fd);
+		getFDName(result, e->child->pid, fd);
 
 		if(strncmp(result, "/usr/lib/", strlen("/usr/lib/")) != 0) {
-			addFD(p.contents, result, data, len);
+			addContentToFD(p.reads, result, data, len);
 		}
 
 		delete[] data;
@@ -210,7 +181,7 @@ int hook_read(struct tracy_event * e) {
 
 int hook_write(struct tracy_event * e) {
     if (e->child->pre_syscall) {
-	    Process &p = get(e->child->pid);
+	    Process &p = getProcess(e->child->pid);
 
 	    int len = e->args.a2;
 	    char *data = new char[len+1];
@@ -221,9 +192,9 @@ int hook_write(struct tracy_event * e) {
 
 
 	    char result[100];
-		getResourceName(result, e->child->pid, e->args.a0);
+	    getFDName(result, e->child->pid, e->args.a0);
 
-	    addFD(p.writes, result, data, len);
+	    addContentToFD(p.writes, result, data, len);
 
 	    //fprintf(graph, "%d -> \"%s\" [tooltip=\"%s\", color=blue, penwidth=4];\n", e->child->pid, result/*p.fds[e->args.a0].c_str()*/, data);
 
@@ -274,7 +245,7 @@ int hook_execve(struct tracy_event *e) {
 
 int hook_sendmsg(struct tracy_event *e) {
 	if(!e->child->pre_syscall) {
-		Process &p = get(e->child->pid);
+		Process &p = getProcess(e->child->pid);
 
 		struct msghdr msg;
 		tracy_read_mem(e->child, &msg, (tracy_child_addr_t) e->args.a1, sizeof(msg));
@@ -291,12 +262,12 @@ int hook_sendmsg(struct tracy_event *e) {
 
 
 			char result[100];
-			getResourceName(result, e->child->pid, e->args.a0);
+			getFDName(result, e->child->pid, e->args.a0);
 
 			if(e->syscall_num == __NR_sendmsg) {
-				addFD(p.writes, result, data, first.iov_len);
+				addContentToFD(p.writes, result, data, first.iov_len);
 			} else if(e->syscall_num == __NR_recvmsg) {
-				addFD(p.contents, result, data, first.iov_len);
+				addContentToFD(p.reads, result, data, first.iov_len);
 			}
 
 			delete[] data;
@@ -306,6 +277,7 @@ int hook_sendmsg(struct tracy_event *e) {
 }
 
 int mytracy_main(struct tracy *tracy);
+
 
 int main(int argc, char** argv) {
 	char* out = getenv("OUT");
@@ -454,8 +426,8 @@ int mytracy_main(struct tracy *tracy) {
 					printf(_g("Our first child died.\n"));
 			}
 
-			Process &p = get(e->child->pid);
-			for(auto content: p.contents) {
+			Process &p = getProcess(e->child->pid);
+			for(auto content: p.reads) {
 				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\", label=\"%s\", fontsize=10];\n",
 				        content.first.c_str(),
 				        e->child->pid,
