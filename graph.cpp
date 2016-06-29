@@ -272,44 +272,6 @@ int hook_execve(struct tracy_event *e) {
 	return TRACY_HOOK_CONTINUE;
 }
 
-int hook_open(struct tracy_event *e) {
-	if(!e->child->pre_syscall) {
-		Process &p = get(e->child->pid);
-		char *path = tracy_read_string(e->child, (tracy_child_addr_t) e->args.a0);
-
-		if(e->args.return_code >= 0) {
-			p.fds[e->args.return_code] = path;
-		}
-	}
-	return TRACY_HOOK_CONTINUE;
-}
-
-int hook_dup2(struct tracy_event *e) {
-	if(!e->child->pre_syscall) {
-		Process &p = get(e->child->pid);
-		p.fds[e->args.a1] = p.fds[e->args.a0];
-		//printf("%d -> %d\n", e->args.a0, e->args.a1);
-	}
-	return TRACY_HOOK_CONTINUE;
-}
-
-int hook_pipe(struct tracy_event *e) {
-	if(!e->child->pre_syscall) {
-		Process &p = get(e->child->pid);
-
-		int pipes[2];
-		tracy_read_mem(e->child, pipes, (tracy_child_addr_t) e->args.a0, sizeof(pipes));
-
-		p.fds[pipes[0]] = "pipe";
-		p.fds[pipes[1]] = "pipe";
-
-		for(int i = 0; i < 10; i++) {
-			printf(">%d - %s\n", i, p.fds[i].c_str());
-		}
-	}
-	return TRACY_HOOK_CONTINUE;
-}
-
 int hook_sendmsg(struct tracy_event *e) {
 	if(!e->child->pre_syscall) {
 		Process &p = get(e->child->pid);
@@ -339,26 +301,6 @@ int hook_sendmsg(struct tracy_event *e) {
 
 			delete[] data;
 		}
-
-
-		/*struct iovec first;
-		tracy_read_mem(e->child, &first, (tracy_child_addr_t) msg.msg_iov, sizeof(first));
-
-		char *data = new char[first.iov_len];
-		tracy_read_mem(e->child, data, (tracy_child_addr_t) first.iov_base, first.iov_len);
-
-		write(1, data, first.iov_len);
-		printf("\n");
-
-
-		char buffer[128];
-		char result[100];
-		sprintf(buffer, "/proc/%d/fd/%d", e->child->pid, e->args.a0);
-		int l = readlink(buffer, result, 99);
-		result[l] = 0;
-
-		addFD(p.writes, result, data, first.iov_len);*/
-
 	}
 	return TRACY_HOOK_CONTINUE;
 }
@@ -434,7 +376,7 @@ int main(int argc, char** argv) {
 		return EXIT_FAILURE;
 	}
 
-	
+
 	if (tracy_set_hook(tracy, "execve", TRACY_ABI_NATIVE, hook_execve)) {
         fprintf(stderr, "Could not hook write\n");
         return EXIT_FAILURE;
@@ -444,21 +386,6 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "Could not hook write\n");
 		return EXIT_FAILURE;
 	}
-
-	/*if (tracy_set_hook(tracy, "open", TRACY_ABI_NATIVE, hook_open)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
-
-	if (tracy_set_hook(tracy, "dup2", TRACY_ABI_NATIVE, hook_dup2)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
-
-	if (tracy_set_hook(tracy, "pipe", TRACY_ABI_NATIVE, hook_pipe)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}*/
 
 	if (tracy_set_hook(tracy, "sendmsg", TRACY_ABI_NATIVE, hook_sendmsg)) {
 		fprintf(stderr, "Could not hook write\n");
