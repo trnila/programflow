@@ -305,27 +305,6 @@ int hook_sendmsg(struct tracy_event *e) {
 	return TRACY_HOOK_CONTINUE;
 }
 
-
-int handle_signal(struct tracy_event *s) {
-	printf(">>>%d %d\n", s->child->pid, s->signal_num);
-
-	long wstatus = s->signal_num;
-
-	if (WIFEXITED(wstatus)) {
-		printf("exited, status=%d\n", WEXITSTATUS(wstatus));
-	} else if (WIFSIGNALED(wstatus)) {
-		printf("killed by signal %d\n", WTERMSIG(wstatus));
-	} else if (WIFSTOPPED(wstatus)) {
-		printf("stopped by signal %d\n", WSTOPSIG(wstatus));
-	} else if (WIFCONTINUED(wstatus)) {
-		printf("continued\n");
-	}
-
-
-
-	return TRACY_HOOK_CONTINUE;
-}
-
 int mytracy_main(struct tracy *tracy);
 
 int main(int argc, char** argv) {
@@ -352,11 +331,6 @@ int main(int argc, char** argv) {
     struct tracy * tracy;
 
     tracy = tracy_init(TRACY_TRACE_CHILDREN | TRACY_VERBOSE);
-
-	if(tracy_set_signal_hook(tracy, handle_signal) != 0) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
 
 	if (tracy_set_hook(tracy, "read", TRACY_ABI_NATIVE, hook_read)) {
 		fprintf(stderr, "Could not hook write\n");
