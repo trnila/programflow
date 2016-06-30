@@ -19,18 +19,32 @@ extern "C" {
 	#include "tracy/src/tracy.h"
 }
 
-void getFDName(char *result, int pid, int fd);
+class File {
+public:
+	File(const std::string &uniqueId, const std::string &label) : uniqueId(uniqueId), label(label){}
+
+	std::string getUniqueIdentifier() {
+		return uniqueId;
+	}
+
+	std::string getLabel() {
+		return label;
+	}
+
+private:
+	std::string uniqueId;
+	std::string label;
+};
 
 class FDContent {
 public:
-	FDContent(const char *name): out(name), fileName(name) {
+	FDContent(const char *name, File file): out(name), fileName(name), file(file) {
 		out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 	}
 
-	FDContent(){}
-
 	void write(const char* data, size_t size) {
 		out.write(data, size);
+		out.flush();
 		total += size;
 	}
 
@@ -42,12 +56,20 @@ public:
 		return total;
 	}
 
+	File getFile() {
+		return file;
+	}
+
 
 private:
 	std::ofstream out;
 	size_t total = 0;
 	std::string fileName;
+	File file;
 };
+
+
+File getFDName(int pid, int fd);
 
 typedef struct _Process {
 	std::unordered_map<std::string, FDContent> reads;
@@ -67,16 +89,19 @@ Process& getProcess(pid_t pid) {
 	return processes[pid];
 }
 
-void addContentToFD(pid_t pid, int fd, char *data, int size, bool write) {
+void addContentToFD(pid_t pid, int fd, char *data, size_t size, bool write) {
 	Process &process = getProcess(pid);
 
 	auto &map = write ? process.writes : process.reads;
 
 
-	char fileName[128];
-	getFDName(fileName, pid, fd);
+	File f = getFDName(pid, fd);
+	std::string lib = "/usr/lib";
+	if(f.getUniqueIdentifier().substr(0, lib.size()) == lib) {
+		return;
+	}
 
-	auto it = map.find(fileName);
+	auto it = map.find(f.getUniqueIdentifier());
 	if(it != map.end()) {
 		it->second.write(data, size);
 	} else {
@@ -87,14 +112,18 @@ void addContentToFD(pid_t pid, int fd, char *data, int size, bool write) {
 				}
 			}
 
-			return str.append(".txt");
+			return str;
 		};
+
+		std::string fileName = f.getUniqueIdentifier() + "." + std::to_string(pid) + (write ? ".out" : ".in");
 
 		std::ostringstream filename;
 		filename << "/tmp/D/" << fix(fileName);
 
-		map[fileName] = FDContent(filename.str().c_str());
-		map[fileName].write(data, size);
+		map.emplace(f.getUniqueIdentifier(), FDContent(filename.str().c_str(), f));
+
+		auto it = map.find(f.getUniqueIdentifier());
+		it->second.write(data, size);
 	}
 }
 
@@ -168,8 +197,9 @@ std::string getAddrWithType(int inode) {
 	return addr;
 }
 
-void getFDName(char *result, int pid, int fd) {
+File getFDName(int pid, int fd) {
 	char buffer[128];
+	char result[1000];
 	sprintf(buffer, "/proc/%d/fd/%d", pid, fd);
 	int l = readlink(buffer, result, 99);
 	if(l >= 0) {
@@ -178,15 +208,19 @@ void getFDName(char *result, int pid, int fd) {
 		result[0]=0;
 	}
 
+	std::ostringstream label;
+	label << result;
+
 	int inode;
 	if(sscanf(result, "socket:[%d]", &inode) == 1) {
 		std::string addr = getAddrWithType(inode);
 
 		if(!addr.empty()) {
-			strcat(result, "\\n");
-			strcat(result, addr.c_str());
+			label << "\n" << addr.c_str();
 		}
 	}
+
+	return File(result, label.str());
 }
 
 int hook_read(struct tracy_event * e) {
@@ -204,13 +238,7 @@ int hook_read(struct tracy_event * e) {
 		data[len] = 0;
 
 		int fd = e->args.a0;
-
-		char result[100];
-		getFDName(result, e->child->pid, fd);
-
-		if(strncmp(result, "/usr/lib/", strlen("/usr/lib/")) != 0) {
-			addContentToFD(e->child->pid, fd, data, len, 0);
-		}
+		addContentToFD(e->child->pid, fd, data, len, 0);
 
 		delete[] data;
 	}
@@ -231,7 +259,7 @@ int hook_write(struct tracy_event * e) {
 
 
 	    char result[100];
-	    getFDName(result, e->child->pid, e->args.a0);
+	    getFDName(e->child->pid, e->args.a0);
 
 	    addContentToFD(e->child->pid, fd, data, len, 1);
 
@@ -467,7 +495,7 @@ int mytracy_main(struct tracy *tracy) {
 			Process &p = getProcess(e->child->pid);
 			for(auto &content: p.reads) {
 				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"%s\", label=\"%s\", fontsize=10];\n",
-				        content.first.c_str(),
+				        content.second.getFile().getLabel().c_str(),
 				        e->child->pid,
 				        content.second.getOutputFileName().c_str(),
 				        formatBytes(content.second.getSize()).c_str()
@@ -478,7 +506,7 @@ int mytracy_main(struct tracy *tracy) {
 			for(auto &content: p.writes) {
 				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"%s\", label=\"%s\", fontsize=10];\n",
 				        e->child->pid,
-				        content.first.c_str(),
+				        content.second.getFile().getLabel().c_str(),
 				        content.second.getOutputFileName().c_str(),
 				        formatBytes(content.second.getSize()).c_str()
 				);
