@@ -19,20 +19,43 @@ extern "C" {
 	#include "tracy/src/tracy.h"
 }
 
-struct Process;
-FILE* graph;
-std::unordered_map<pid_t, Process> processes;
+void getFDName(char *result, int pid, int fd);
 
-typedef struct {
-	int size;
-	char* data;
-} FDContent;
+class FDContent {
+public:
+	FDContent(const char *name): out(name), fileName(name) {
+		out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+	}
+
+	FDContent(){}
+
+	void write(const char* data, size_t size) {
+		out.write(data, size);
+		total += size;
+	}
+
+	const std::string& getOutputFileName() {
+		return fileName;
+	}
+
+	size_t getSize() {
+		return total;
+	}
+
+
+private:
+	std::ofstream out;
+	size_t total = 0;
+	std::string fileName;
+};
 
 typedef struct _Process {
 	std::unordered_map<std::string, FDContent> reads;
 	std::unordered_map<std::string, FDContent> writes;
 } Process;
 
+FILE* graph;
+std::unordered_map<pid_t, Process> processes;
 
 Process& getProcess(pid_t pid) {
 	auto it = processes.find(pid);
@@ -44,18 +67,34 @@ Process& getProcess(pid_t pid) {
 	return processes[pid];
 }
 
-void addContentToFD(std::unordered_map<std::string, FDContent> &map, std::string file, char *data, int size) {
-	auto it = map.find(file);
+void addContentToFD(pid_t pid, int fd, char *data, int size, bool write) {
+	Process &process = getProcess(pid);
+
+	auto &map = write ? process.writes : process.reads;
+
+
+	char fileName[128];
+	getFDName(fileName, pid, fd);
+
+	auto it = map.find(fileName);
 	if(it != map.end()) {
-		int pos = map[file].size;
-		map[file].size += size;
-		map[file].data = (char*) realloc(map[file].data, map[file].size);
-		memcpy(map[file].data + pos, data, size);
+		it->second.write(data, size);
 	} else {
-		map[file] = FDContent();
-		map[file].size = size;
-		map[file].data = (char*) malloc(size);
-		memcpy(map[file].data, data, size);
+		auto fix = [](std::string str) -> std::string {
+			for(char &c: str) {
+				if(c == '/' || c == '\\') {
+					c = '-';
+				}
+			}
+
+			return str.append(".txt");
+		};
+
+		std::ostringstream filename;
+		filename << "/tmp/D/" << fix(fileName);
+
+		map[fileName] = FDContent(filename.str().c_str());
+		map[fileName].write(data, size);
 	}
 }
 
@@ -170,7 +209,7 @@ int hook_read(struct tracy_event * e) {
 		getFDName(result, e->child->pid, fd);
 
 		if(strncmp(result, "/usr/lib/", strlen("/usr/lib/")) != 0) {
-			addContentToFD(p.reads, result, data, len);
+			addContentToFD(e->child->pid, fd, data, len, 0);
 		}
 
 		delete[] data;
@@ -194,7 +233,7 @@ int hook_write(struct tracy_event * e) {
 	    char result[100];
 	    getFDName(result, e->child->pid, e->args.a0);
 
-	    addContentToFD(p.writes, result, data, len);
+	    addContentToFD(e->child->pid, fd, data, len, 1);
 
 	    //fprintf(graph, "%d -> \"%s\" [tooltip=\"%s\", color=blue, penwidth=4];\n", e->child->pid, result/*p.fds[e->args.a0].c_str()*/, data);
 
@@ -261,13 +300,12 @@ int hook_sendmsg(struct tracy_event *e) {
 			//printf("\n");
 
 
-			char result[100];
-			getFDName(result, e->child->pid, e->args.a0);
+			int fd = e->args.a0;
 
 			if(e->syscall_num == __NR_sendmsg) {
-				addContentToFD(p.writes, result, data, first.iov_len);
+				addContentToFD(e->child->pid, fd, data, first.iov_len, 1);
 			} else if(e->syscall_num == __NR_recvmsg) {
-				addContentToFD(p.reads, result, data, first.iov_len);
+				addContentToFD(e->child->pid, fd, data, first.iov_len, 0);
 			}
 
 			delete[] data;
@@ -427,22 +465,22 @@ int mytracy_main(struct tracy *tracy) {
 			}
 
 			Process &p = getProcess(e->child->pid);
-			for(auto content: p.reads) {
-				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\", label=\"%s\", fontsize=10];\n",
+			for(auto &content: p.reads) {
+				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"%s\", label=\"%s\", fontsize=10];\n",
 				        content.first.c_str(),
 				        e->child->pid,
-				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str(),
-				        formatBytes(content.second.size).c_str()
+				        content.second.getOutputFileName().c_str(),
+				        formatBytes(content.second.getSize()).c_str()
 				);
 			}
 
 
-			for(auto content: p.writes) {
-				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"data:text/plain;base64,%s\", label=\"%s\", fontsize=10];\n",
+			for(auto &content: p.writes) {
+				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"%s\", label=\"%s\", fontsize=10];\n",
 				        e->child->pid,
 				        content.first.c_str(),
-				        base64_encode((const unsigned char*) content.second.data, content.second.size).c_str(),
-				        formatBytes(content.second.size).c_str()
+				        content.second.getOutputFileName().c_str(),
+				        formatBytes(content.second.getSize()).c_str()
 				);
 			}
 
