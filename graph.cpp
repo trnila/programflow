@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <fstream>
 #include <iostream>
+#include <functional>
 #include "base64.h"
 #include "malloc.h"
 
@@ -367,58 +368,36 @@ int main(int argc, char** argv) {
 	fprintf(graph, "digraph {label=\"%s\";labelloc=\"t\";\n", ar.c_str());
 
     struct tracy * tracy;
-
     tracy = tracy_init(TRACY_TRACE_CHILDREN | TRACY_VERBOSE);
 
-	if (tracy_set_hook(tracy, "read", TRACY_ABI_NATIVE, hook_read)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
-	if (tracy_set_hook(tracy, "recvfrom", TRACY_ABI_NATIVE, hook_read)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
+	const std::unordered_map<const char*, int(*)(struct tracy_event*)> hooks {
+			{"read", hook_read},
+			{"recvfrom", hook_read},
+			{"write", hook_write},
+			{"sendto", hook_write},
+			{"execve", hook_execve},
+			{"clone", hook_fork},
+			{"sendmsg", hook_sendmsg},
+			{"recvmsg", hook_sendmsg}
+	};
 
-    if (tracy_set_hook(tracy, "write", TRACY_ABI_NATIVE, hook_write)) {
-        fprintf(stderr, "Could not hook write\n");
-        return EXIT_FAILURE;
-    }
-	if (tracy_set_hook(tracy, "sendto", TRACY_ABI_NATIVE, hook_write)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
-
-
-	if (tracy_set_hook(tracy, "execve", TRACY_ABI_NATIVE, hook_execve)) {
-        fprintf(stderr, "Could not hook write\n");
-        return EXIT_FAILURE;
-    }
-
-	if (tracy_set_hook(tracy, "clone", TRACY_ABI_NATIVE, hook_fork)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
-
-	if (tracy_set_hook(tracy, "sendmsg", TRACY_ABI_NATIVE, hook_sendmsg)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
-	}
-
-	if (tracy_set_hook(tracy, "recvmsg", TRACY_ABI_NATIVE, hook_sendmsg)) {
-		fprintf(stderr, "Could not hook write\n");
-		return EXIT_FAILURE;
+	for(auto &pair: hooks) {
+		if(tracy_set_hook(tracy, (char*) pair.first, TRACY_ABI_NATIVE, pair.second)) {
+			fprintf(stderr, "Could not hook %s", "a");
+			return -1;
+		}
 	}
 
     if (argc < 2) {
         printf("Usage: ./example <program-name>\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     argv++; argc--;
 
     if (!tracy_exec(tracy, argv)) {
         perror("tracy_exec");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     mytracy_main(tracy);
@@ -426,7 +405,7 @@ int main(int argc, char** argv) {
     tracy_free(tracy);
 	fprintf(graph, "}\n");
 
-    return EXIT_SUCCESS;
+    return -1;
 }
 
 std::string formatBytes(int i) {
