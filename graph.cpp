@@ -13,12 +13,17 @@
 #include <fstream>
 #include <iostream>
 #include <functional>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "base64.h"
 #include "malloc.h"
 
 extern "C" {
 	#include "tracy/src/tracy.h"
 }
+
+const char *directory;
+void ensureDirectoryExists(std::string dir);
 
 class File {
 public:
@@ -41,6 +46,9 @@ class FDContent {
 public:
 	FDContent(const char *name, File file): out(name), fileName(name), file(file) {
 		out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+		if(!out.is_open()) {
+			perror("failed to open file!");
+		}
 	}
 
 	void write(const char* data, size_t size) {
@@ -103,9 +111,7 @@ void addContentToFD(pid_t pid, int fd, char *data, size_t size, bool write) {
 	}
 
 	auto it = map.find(f.getUniqueIdentifier());
-	if(it != map.end()) {
-		it->second.write(data, size);
-	} else {
+	if(it == map.end()) {
 		auto fix = [](std::string str) -> std::string {
 			for(char &c: str) {
 				if(c == '/' || c == '\\') {
@@ -113,19 +119,18 @@ void addContentToFD(pid_t pid, int fd, char *data, size_t size, bool write) {
 				}
 			}
 
-			return str;
+			return str.at(0) == '-' ? str.substr(1) : str;
 		};
 
-		std::string fileName = f.getUniqueIdentifier() + "." + std::to_string(pid) + (write ? ".out" : ".in");
+		std::ostringstream destination;
+		destination << directory << "/" << pid << "/";
+		ensureDirectoryExists(destination.str());
+		destination << fix(f.getUniqueIdentifier()) << (write ? ".out" : ".in");
 
-		std::ostringstream filename;
-		filename << "/tmp/D/" << fix(fileName);
-
-		map.emplace(f.getUniqueIdentifier(), FDContent(filename.str().c_str(), f));
-
-		auto it = map.find(f.getUniqueIdentifier());
-		it->second.write(data, size);
+		it = map.emplace(f.getUniqueIdentifier(), FDContent(destination.str().c_str(), f)).first;
 	}
+
+	it->second.write(data, size);
 }
 
 std::string getInodeDescription(const char *file, int inode) {
@@ -345,14 +350,34 @@ int hook_sendmsg(struct tracy_event *e) {
 
 int mytracy_main(struct tracy *tracy);
 
+void ensureDirectoryExists(std::string dir) {
+	std::string::size_type last = 1;
+	std::string::size_type pos;
+
+	do {
+		pos = dir.find('/', last);
+
+		//std::cout << dir.substr(0, pos) << "\n";
+		if(mkdir(dir.substr(0, pos).c_str(), 0700) != 0) {
+			if(errno != EEXIST) {
+				perror("Could not create directory");
+				exit(1);
+			}
+		}
+
+		last = pos + 1;
+	} while (pos != std::string::npos);
+}
 
 int main(int argc, char** argv) {
-	char* out = getenv("OUT");
-	if(!out) {
-		out = "/tmp/graph.dot";
+	directory = getenv("OUT");
+	if(!directory) {
+		directory = "/tmp/graph";
 	}
 
-	graph = fopen(out, "w+");
+	ensureDirectoryExists(directory);
+
+	graph = fopen((std::string(directory) + "/graph").c_str(), "w+");
 	if(!graph) {
 		perror("fopen");
 		exit(1);
