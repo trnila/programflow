@@ -26,6 +26,10 @@ Process& getProcess(pid_t pid) {
 	return processes[pid];
 }
 
+void deleteProcess(pid_t pid) {
+	processes.erase(pid);
+}
+
 void addContentToFD(pid_t pid, int fd, char *data, size_t size, bool write) {
 	Process &process = getProcess(pid);
 

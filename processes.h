@@ -64,5 +64,6 @@ typedef struct _Process {
 } Process;
 
 Process& getProcess(pid_t pid);
+void deleteProcess(pid_t pid);
 
 void addContentToFD(pid_t pid, int fd, char *data, size_t size, bool write);

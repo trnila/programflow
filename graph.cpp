@@ -154,6 +154,7 @@ int mytracy_main(struct tracy *tracy) {
 				);
 			}
 
+			deleteProcess(e->child->pid);
 
 			tracy_remove_child(e->child);
 			continue;
