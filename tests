@@ -1,12 +1,14 @@
 ./examples/pipes
 ./examples/dbus
+./examples/c++11threads
+python ./examples/threads.py
 ls
 bash -c '/usr/bin/echo ahoj > /tmp/x'
 bash -c 'ls'
 bash -c 'ls;who'
 bash -c 'ls | tac | tr a-z A-Z > /tmp/x'
 timeout 10 xterm
-bash -c 'rm -r ~/.mozilla; timeout 15 firefox'
+bash -c 'timeout 15 firefox'
 make clean all -C examples/
 make clean all -C examples/3
 timeout 10 weston
