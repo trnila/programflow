@@ -2,6 +2,8 @@
 #include <syscall.h>
 #include <sys/socket.h>
 #include "processes.h"
+#include "utils.h"
+
 extern "C" {
 #include "tracy/src/tracy.h"
 }
@@ -75,15 +77,15 @@ int hook_execve(struct tracy_event *e) {
 
 			char *c = tracy_read_string(e->child, (tracy_child_addr_t) argv);
 
-			os << c << "\n";
+			os << c << " ";
 
 			i++;
 		}
 
-		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"data:text/plain;base64,%s\",fontsize=12];\n",
+		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"data:text/plain,%s\",fontsize=12];\n",
 		        e->child->pid,
 		        path,
-		        ""//TODO: base64_encode((unsigned char*) os.str().c_str(), os.str().size()).c_str()
+		        xmlentities(os.str()).c_str()
 		);
 	}
 	return TRACY_HOOK_CONTINUE;

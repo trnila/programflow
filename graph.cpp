@@ -37,14 +37,12 @@ int main(int argc, char** argv) {
 		exit(1);
 	}
 
-	std::string ar;
-	for(int i = 1; i < argc; i++) {
-		ar.append("\\\"");
-		ar.append(argv[i]);
-		ar.append("\\\" ");
+	std::stringstream ss;
+	for(int i = 2; i < argc; i++) {
+		ss << escape(argv[i]) << " ";
 	}
 
-	fprintf(graph, "digraph {label=\"%s\";labelloc=\"t\";\n", ar.c_str());
+	fprintf(graph, "digraph {label=\"%s\";labelloc=\"t\";\n", ss.str().c_str());
 
     struct tracy * tracy;
     tracy = tracy_init(TRACY_TRACE_CHILDREN | TRACY_VERBOSE);
@@ -67,8 +65,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
-    argv += 2; argc -= 2;
-
+	argv += 2; argc -= 2;
     if (!tracy_exec(tracy, argv)) {
         perror("tracy_exec");
         return -1;

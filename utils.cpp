@@ -35,3 +35,35 @@ void ensureDirectoryExists(std::string dir) {
 		last = pos + 1;
 	} while (pos != std::string::npos);
 }
+
+std::string escape(const std::string &str) {
+	std::stringstream ss;
+
+	for(char c: str) {
+		if (c == '\n') {
+			ss << "\\n";
+		} else {
+			if (c == '"' || c == '\\') {
+				ss << "\\";
+			}
+
+			ss << c;
+		}
+	}
+
+	return ss.str();
+}
+
+std::string xmlentities(const std::string &str) {
+	std::stringstream ss;
+
+	for(char c: str) {
+		if (c == '"') {
+			ss << "&quot;";
+		} else {
+			ss << c;
+		}
+	}
+
+	return ss.str();
+}
