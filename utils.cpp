@@ -60,6 +60,8 @@ std::string xmlentities(const std::string &str) {
 	for(char c: str) {
 		if (c == '"') {
 			ss << "&quot;";
+		} else if(c == '&') {
+			ss << "&amp;";
 		} else {
 			ss << c;
 		}
