@@ -1,1 +1,1 @@
-make -C tracy/src/ clean default && make && clear && ./graph "$@"; /home/daniel/graphviz/bin/dot -Tsvg /tmp/graph.dot > /tmp/a.svg
+make -C tracy/src/ clean default && make && clear && ./graph /tmp/graph "$@" && dot -Tsvg /tmp/graph/graph.dot > /tmp/graph/graph.svg

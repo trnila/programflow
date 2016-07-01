@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 	directory = argv[1];
 	ensureDirectoryExists(directory);
 
-	graph = fopen((std::string(directory) + "/graph").c_str(), "w+");
+	graph = fopen((std::string(directory) + "/graph.dot").c_str(), "w+");
 	if(!graph) {
 		perror("fopen");
 		exit(1);
@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
-    argv++; argc--;
+    argv += 2; argc -= 2;
 
     if (!tracy_exec(tracy, argv)) {
         perror("tracy_exec");
@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
     tracy_free(tracy);
 	fprintf(graph, "}\n");
 
-    return -1;
+    return 0;
 }
 
 
