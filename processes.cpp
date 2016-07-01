@@ -54,12 +54,13 @@ void addContentToFD(pid_t pid, int fd, char *data, size_t size, bool write) {
 			return str.at(0) == '-' ? str.substr(1) : str;
 		};
 
-		std::ostringstream destination;
-		destination << directory << "/" << pid << "/";
-		ensureDirectoryExists(destination.str());
-		destination << fix(f.getUniqueIdentifier()) << (write ? ".out" : ".in");
+		std::string filename = fix(f.getUniqueIdentifier()) + (write ? ".out" : ".in");
+		std::string relative = std::to_string(pid) + "/" + filename;
+		std::string absolute = std::string(directory) + "/" + std::to_string(pid) + "/";
+		ensureDirectoryExists(absolute);
+		absolute += filename;
 
-		it = map.emplace(f.getUniqueIdentifier(), FDContent(destination.str().c_str(), f)).first;
+		it = map.emplace(f.getUniqueIdentifier(), FDContent(absolute.c_str(), relative.c_str(), f)).first;
 	}
 
 	it->second.write(data, size);

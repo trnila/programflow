@@ -136,7 +136,7 @@ int mytracy_main(struct tracy *tracy) {
 				fprintf(graph, "\"%s\" -> %d [color=red, penwidth=2, target=_blank, URL=\"%s\", label=\"%s\", fontsize=10];\n",
 				        content.second.getFile().getLabel().c_str(),
 				        e->child->pid,
-				        content.second.getOutputFileName().c_str(),
+				        content.second.getRelativePath().c_str(),
 				        formatBytes(content.second.getSize()).c_str()
 				);
 			}
@@ -146,7 +146,7 @@ int mytracy_main(struct tracy *tracy) {
 				fprintf(graph, "%d -> \"%s\" [color=blue, penwidth=2, target=_blank, URL=\"%s\", label=\"%s\", fontsize=10];\n",
 				        e->child->pid,
 				        content.second.getFile().getLabel().c_str(),
-				        content.second.getOutputFileName().c_str(),
+				        content.second.getRelativePath().c_str(),
 				        formatBytes(content.second.getSize()).c_str()
 				);
 			}

@@ -1,14 +1,12 @@
 #!/bin/bash
 list=out/index.html
 
-n=1
 echo "<ul>" > $list
-for i in out/*.dot; do
-	/home/daniel/graphviz/bin/dot -Tsvg "$i" > "$(dirname "$i")/$(basename "$i" .dot).svg"
+for i in $(find out -type f -name "*.dot"); do
+	dot -Tsvg "$i" > "$(dirname "$i")/graph.svg"
 
+	n=$(basename "$(dirname "$i")")
 	name=$(sed "${n}q;d" tests)
-	echo "<li><a href='$n.svg'>$name</a></li>" >> $list
-	
-	n=$((n+1))
+	echo "<li><a href='$n/graph.svg'>$name</a></li>" >> $list
 done;
 echo "</ul>" >> $list

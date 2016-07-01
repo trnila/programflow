@@ -25,7 +25,7 @@ private:
 
 class FDContent {
 public:
-	FDContent(const char *name, File file): out(name), fileName(name), file(file) {
+	FDContent(const char *name, const char* relativePath, File file): out(name), relativePath(relativePath), fileName(name), file(file) {
 		out.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 		if(!out.is_open()) {
 			perror("failed to open file!");
@@ -50,11 +50,16 @@ public:
 		return file;
 	}
 
+	const std::string getRelativePath() {
+		return relativePath;
+	}
+
 
 private:
 	std::ofstream out;
 	size_t total = 0;
 	std::string fileName;
+	std::string relativePath;
 	File file;
 };
 
