@@ -64,7 +64,8 @@ int hook_execve(struct tracy_event *e) {
 	if(e->child->pre_syscall) {
 		char *path = tracy_read_string(e->child, (tracy_child_addr_t) e->args.a0);
 
-		std::ostringstream os;
+		std::string argsFile = std::to_string(e->child->pid) + ".args";
+		std::ofstream out(std::string(directory) + "/" + argsFile);
 
 		int i = 0;
 		while(1) {
@@ -77,15 +78,18 @@ int hook_execve(struct tracy_event *e) {
 
 			char *c = tracy_read_string(e->child, (tracy_child_addr_t) argv);
 
-			os << c << " ";
+			out << c << " ";
 
 			i++;
 		}
 
-		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"data:text/plain,%s\",fontsize=12];\n",
+		out.close();
+
+
+		fprintf(graph, "%d [label=\"%s\", style=filled, fillcolor=yellow, target=_blank, URL=\"%s\",fontsize=12];\n",
 		        e->child->pid,
 		        path,
-		        xmlentities(os.str()).c_str()
+		        argsFile.c_str()
 		);
 	}
 	return TRACY_HOOK_CONTINUE;
